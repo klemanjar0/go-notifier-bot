@@ -17,14 +17,15 @@ type TelegramBot struct {
 	log *zap.Logger
 }
 
-func Init(cfg *config.Config) (*TelegramBot, error) {
+func Init(cfg *config.Config, parser Parser, reminders Reminders) (*TelegramBot, error) {
 	log := logger.Named("telegram")
+	handlers := NewHandlers(parser, reminders)
 
 	opts := []bot.Option{
-		bot.WithDefaultHandler(handler),
-		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, StartHandler),
-		bot.WithMessageTextHandler("/clear_all", bot.MatchTypeExact, AnythingHandler),
-		bot.WithMessageTextHandler("/list", bot.MatchTypeExact, AnythingHandler),
+		bot.WithDefaultHandler(handlers.OnMessage),
+		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, handlers.StartHandler),
+		bot.WithMessageTextHandler("/clear_all", bot.MatchTypeExact, handlers.AnythingHandler),
+		bot.WithMessageTextHandler("/list", bot.MatchTypeExact, handlers.AnythingHandler),
 		bot.WithDebugHandler(func(format string, args ...any) {
 			log.Debug(fmt.Sprintf(format, args...))
 		}),
