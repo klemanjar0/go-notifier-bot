@@ -1,16 +1,26 @@
-.PHONY: run sqlc up down down-v restart logs ps psql \
-        migrate-up migrate-down migrate-force migrate-version migrate-create
+.PHONY: run debug test sqlc up down down-v restart logs ps psql \
+        migrate-up migrate-down migrate-down-all migrate-force migrate-version migrate-create
 
 SQLC_VERSION    := v1.27.0
 MIGRATE_VERSION := v4.17.1
 MIGRATIONS_DIR  := internal/db/migrations
-DB_URL          ?= postgres://postgres:postgres@localhost:5432/notifier?sslmode=disable
 
-MIGRATE := go run -tags 'postgres,file' github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) \
-	-path $(MIGRATIONS_DIR) -database "$(DB_URL)"
+# The migrator resolves the database from DATABASE_URL, falling back to .env.local
+# and then to the local docker compose database. Override per invocation with
+# `make migrate-up DATABASE_URL=postgres://...`.
+DATABASE_URL ?=
+export DATABASE_URL
+
+MIGRATE := go run ./cmd/migrate -path $(MIGRATIONS_DIR)
 
 run: ## Run the bot
-	go run ./cmd
+	go run ./cmd/bot
+
+debug: ## Run the bot with verbose debug logging
+	LOG_LEVEL=debug go run ./cmd/bot
+
+test: ## Run the tests
+	go test ./...
 
 sqlc: ## Generate Go code from SQL (migrations/*.up.sql + queries.sql) — update sqlc.yaml when you add a migration
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
@@ -46,6 +56,9 @@ migrate-down: ## Roll back the last migration
 
 migrate-force: ## Force the schema_migrations version without running SQL (make migrate-force VERSION=1)
 	$(MIGRATE) force $(VERSION)
+
+migrate-down-all: ## Roll back every migration
+	$(MIGRATE) down all
 
 migrate-version: ## Show the current migration version
 	$(MIGRATE) version
