@@ -1,0 +1,23 @@
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Local env & secrets — never bake into an image
+.env
+.env.local
+*.env
+
+# Local tooling / compose (not needed in the build context)
+docker-compose.yml
+Dockerfile
+.dockerignore
+Makefile
+README.md
+
+# Build artifacts
+/bot
+/migrate
+*.test
+*.out
