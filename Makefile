@@ -1,7 +1,7 @@
 .PHONY: run debug test sqlc up down down-v restart logs ps psql \
         migrate-up migrate-down migrate-down-all migrate-force migrate-version migrate-create
 
-SQLC_VERSION    := v1.27.0
+SQLC_VERSION    := v1.29.0
 MIGRATE_VERSION := v4.17.1
 MIGRATIONS_DIR  := internal/db/migrations
 

@@ -22,11 +22,9 @@ type Parser interface {
 	Parse(ctx context.Context, msg string) (result *ParserResult, err error)
 }
 
-// Reminders is the reminder service as the handlers need it: persist a parsed
-// reminder for a chat. Declared here so the telegram package does not depend on
-// the reminder package's concrete type.
 type Reminders interface {
 	Create(ctx context.Context, chatID int64, text string, fireAt time.Time) (int64, error)
+	MarkAllSentForChat(ctx context.Context, chatID int64) error
 }
 
 type Handlers struct {
@@ -58,15 +56,35 @@ func (h *Handlers) StartHandler(ctx context.Context, b *bot.Bot, update *models.
 	}
 }
 
+func (h *Handlers) ClearAllHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	log := logger.Named("telegram")
+	var text = "сказано - сделано, все напоминания ушли в небытие."
+
+	err := h.reminders.MarkAllSentForChat(ctx, update.Message.Chat.ID)
+
+	if err != nil {
+		text = "на этом наши полномочия всё, не получилось. попробуй позже еще раз."
+	}
+
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   text,
+	}); err != nil {
+		log.Error("send message failed", zap.Error(err))
+		return
+	}
+}
+
 func (h *Handlers) AnythingHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := logger.Named("telegram")
 
 	var rejectTexts = [...]string{
 		"к сожалению у меня пока нет полномочий делать такие дела.",
-		"ну дела, я пока не знаю как это делать. попрошу начальство разобраться.",
+		"ну дела, я пока не знаю как это делать.",
 		"я бы с радостью воплотил любые твои мечты, но этой пока надо подождать.",
 		"ты классный человек, правда, и у нас точно бы все получилось, но не в этот раз, не в этом мире.",
 		"тихо, не спеша, подожди, и я может когда-нибудь научусь это делать, но не сейчас.",
+		"а в рот шампанским не пописять? я пока такое не умею.",
 	}
 
 	const postfix = "я начальству скажу, пусть что-то с этим сделают"

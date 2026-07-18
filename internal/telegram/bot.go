@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 
 	"github.com/klemanjar0/go-notifier-bot/internal/config"
@@ -24,7 +23,7 @@ func Init(cfg *config.Config, parser Parser, reminders Reminders) (*TelegramBot,
 	opts := []bot.Option{
 		bot.WithDefaultHandler(handlers.OnMessage),
 		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, handlers.StartHandler),
-		bot.WithMessageTextHandler("/clear_all", bot.MatchTypeExact, handlers.AnythingHandler),
+		bot.WithMessageTextHandler("/clear_all", bot.MatchTypeExact, handlers.ClearAllHandler),
 		bot.WithMessageTextHandler("/list", bot.MatchTypeExact, handlers.AnythingHandler),
 		bot.WithDebugHandler(func(format string, args ...any) {
 			log.Debug(fmt.Sprintf(format, args...))
@@ -45,33 +44,6 @@ func Init(cfg *config.Config, parser Parser, reminders Reminders) (*TelegramBot,
 
 	log.Info("bot initialised")
 	return &TelegramBot{Bot: b, log: log}, nil
-}
-
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	log := logger.Named("telegram")
-	if update.Message == nil {
-		log.Debug("update without message, ignoring", zap.Int64("update_id", update.ID))
-		return
-	}
-
-	ctx = logger.Into(ctx, log.With(
-		zap.Int64("update_id", update.ID),
-		zap.Int64("chat_id", update.Message.Chat.ID),
-	))
-	log = logger.From(ctx)
-
-	// Message text can be personal, so log its size rather than its content.
-	done := logger.Trace(ctx, "telegram.handle_update", zap.Int("text_len", len(update.Message.Text)))
-	defer done()
-
-	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   update.Message.Text,
-	}); err != nil {
-		log.Error("send message failed", zap.Error(err))
-		return
-	}
-	log.Debug("message sent")
 }
 
 func (bot *TelegramBot) Start(ctx context.Context) {

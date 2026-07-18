@@ -19,3 +19,7 @@ FROM reminders
 WHERE chat_id = $1
     AND sent = FALSE
 ORDER BY fire_at;
+-- name: MarkAllSentForChat :exec
+UPDATE reminders
+SET sent = TRUE
+WHERE chat_id = $1;
