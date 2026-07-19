@@ -16,6 +16,7 @@ type Config struct {
 	DatabaseURL string
 	LogLevel    string
 	LogFormat   string
+	HealthAddr  string
 }
 
 func Load() (*Config, error) {
@@ -29,6 +30,7 @@ func Load() (*Config, error) {
 		DatabaseURL: envOr("DATABASE_URL", defaultDatabaseURL),
 		LogLevel:    envOr("LOG_LEVEL", "info"),
 		LogFormat:   envOr("LOG_FORMAT", "console"),
+		HealthAddr:  envOr("HEALTH_ADDR", ":8080"),
 	}
 
 	for name, value := range map[string]string{

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/klemanjar0/go-notifier-bot/internal/config"
 	"github.com/klemanjar0/go-notifier-bot/internal/db"
+	"github.com/klemanjar0/go-notifier-bot/internal/health"
 	"github.com/klemanjar0/go-notifier-bot/internal/logger"
 	"github.com/klemanjar0/go-notifier-bot/internal/parser"
 	"github.com/klemanjar0/go-notifier-bot/internal/reminder"
@@ -70,10 +72,10 @@ func main() {
 
 	sched := reminder.NewScheduler(queries, appBot.Bot, logger.Named("scheduler"))
 
-	go sched.Run(ctx)
-	appBot.Start(ctx)
+	healthSrv := health.NewServer(cfg.HealthAddr)
+	go healthSrv.Start()
 
-	logger.Info("started")
+	go sched.Run(ctx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -82,7 +84,13 @@ func main() {
 		appBot.Start(ctx)
 	}()
 
+	logger.Info("started")
+
 	<-quit
 	logger.Info("shutting down user service")
 	appBot.Shutdown(ctx)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	healthSrv.Shutdown(shutdownCtx)
 }
