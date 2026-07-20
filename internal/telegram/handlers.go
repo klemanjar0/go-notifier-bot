@@ -278,16 +278,15 @@ func (h *Handlers) OnMessage(ctx context.Context, b *bot.Bot, update *models.Upd
 
 	var successMessages = [...]string{
 		"так точно, есть напомнить",
-		"слушаюсь, босс,",
-		"ну у тебя конечно и большие планы -",
-		"дела ладить не х#й гладить, а тебе надо",
-		"постараюсь не забыть, и тебе напомнить",
+		"хорошо босс,",
+		"ну у тебя конечно и большие планы",
+		"постараюсь не забыть",
 	}
 
 	text := successMessages[rand.Intn(len(successMessages))]
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   fmt.Sprintf("%s %s в %s", text, res.Text, fireAt.Format("02.01 15:04")),
+		Text:   fmt.Sprintf("%s. я напомню -> %s в %s", text, res.Text, fireAt.Format("02.01 15:04")),
 	})
 }
