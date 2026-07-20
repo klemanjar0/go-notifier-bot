@@ -1,9 +1,15 @@
-.PHONY: run debug test sqlc up down down-v restart logs ps psql \
+.PHONY: run debug build start clean test sqlc up down down-v restart logs ps psql \
+        docker-build docker-run \
         migrate-up migrate-down migrate-down-all migrate-force migrate-version migrate-create
 
 SQLC_VERSION    := v1.29.0
 MIGRATE_VERSION := v4.17.1
 MIGRATIONS_DIR  := internal/db/migrations
+BIN_DIR         := bin
+
+IMAGE    := go-notifier-bot
+VERSION  ?= dev
+ENV_FILE ?= .env.local
 
 # The migrator resolves the database from DATABASE_URL, falling back to .env.local
 # and then to the local docker compose database. Override per invocation with
@@ -19,11 +25,39 @@ run: ## Run the bot
 debug: ## Run the bot with verbose debug logging
 	LOG_LEVEL=debug go run ./cmd/bot
 
+build: ## Build the bot and migrate binaries into bin/
+	go build -o $(BIN_DIR)/bot ./cmd/bot
+	go build -o $(BIN_DIR)/migrate ./cmd/migrate
+
+start: build ## Build the bot, then run the compiled binary
+	$(BIN_DIR)/bot
+
+clean: ## Remove built binaries
+	rm -rf $(BIN_DIR)
+
 test: ## Run the tests
 	go test ./...
 
 sqlc: ## Generate Go code from SQL (migrations/*.up.sql + queries.sql) — update sqlc.yaml when you add a migration
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
+
+docker-build: ## Build the runtime image (make docker-build VERSION=1.2.3)
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
+
+docker-run: docker-build ## Run the image locally with config from .env.local (make docker-run ENV_FILE=.env.other)
+	@test -f $(ENV_FILE) || { echo "$(ENV_FILE) not found — copy .env.example to .env.local first"; exit 1; }
+	@# .env.local is passed at runtime, never baked into the image (see .dockerignore).
+	@# A DATABASE_URL pointing at the host's Postgres is unreachable from inside the
+	@# container, so rewrite that host only; a remote URL is left untouched.
+	@url=$$(grep -E '^DATABASE_URL=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr -d '"'"'"'"'); \
+	url=$${DATABASE_URL:-$${url:-postgres://postgres:postgres@localhost:5432/notifier?sslmode=disable}}; \
+	url=$$(printf '%s' "$$url" | sed -e 's#@localhost:#@host.docker.internal:#' -e 's#@127\.0\.0\.1:#@host.docker.internal:#'); \
+	echo "running $(IMAGE):$(VERSION) with env from $(ENV_FILE), db host $$(printf '%s' "$$url" | sed -e 's#.*@##' -e 's#[/?].*##')"; \
+	docker run --rm -i $$([ -t 0 ] && printf -- -t) \
+	  --env-file $(ENV_FILE) \
+	  --add-host host.docker.internal:host-gateway \
+	  -e DATABASE_URL="$$url" \
+	  $(IMAGE):$(VERSION)
 
 up: ## Start local Postgres + Adminer, then apply migrations
 	docker compose up -d

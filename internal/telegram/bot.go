@@ -24,7 +24,8 @@ func Init(cfg *config.Config, parser Parser, reminders Reminders) (*TelegramBot,
 		bot.WithDefaultHandler(handlers.OnMessage),
 		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, handlers.StartHandler),
 		bot.WithMessageTextHandler("/clear_all", bot.MatchTypeExact, handlers.ClearAllHandler),
-		bot.WithMessageTextHandler("/list", bot.MatchTypeExact, handlers.AnythingHandler),
+		bot.WithMessageTextHandler("/list", bot.MatchTypeExact, handlers.ListHandler),
+		bot.WithCallbackQueryDataHandler("cancel:", bot.MatchTypePrefix, handlers.CancelCallbackHandler),
 		bot.WithDebugHandler(func(format string, args ...any) {
 			log.Debug(fmt.Sprintf(format, args...))
 		}),

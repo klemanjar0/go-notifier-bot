@@ -37,6 +37,23 @@ func (q *Queries) CreateReminder(ctx context.Context, arg CreateReminderParams) 
 	return i, err
 }
 
+const cancelReminder = `-- name: CancelReminder :exec
+UPDATE reminders
+SET sent = TRUE
+WHERE id = $1
+    AND chat_id = $2
+`
+
+type CancelReminderParams struct {
+	ID     int64
+	ChatID int64
+}
+
+func (q *Queries) CancelReminder(ctx context.Context, arg CancelReminderParams) error {
+	_, err := q.db.Exec(ctx, cancelReminder, arg.ID, arg.ChatID)
+	return err
+}
+
 const getDueReminders = `-- name: GetDueReminders :many
 SELECT id, chat_id, text, fire_at, sent, created_at
 FROM reminders

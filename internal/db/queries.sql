@@ -23,3 +23,8 @@ ORDER BY fire_at;
 UPDATE reminders
 SET sent = TRUE
 WHERE chat_id = $1;
+-- name: CancelReminder :exec
+UPDATE reminders
+SET sent = TRUE
+WHERE id = $1
+    AND chat_id = $2;

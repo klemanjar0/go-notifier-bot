@@ -50,6 +50,14 @@ func main() {
 	logger.Info("starting notifier bot", zap.String("log_level", cfg.LogLevel))
 	logger.Debug("config loaded", zap.String("database_url", cfg.SafeDatabaseURL()))
 
+	// Apply pending migrations before opening the app pool, so the schema the
+	// queries expect is guaranteed to exist. Embedded, so the runtime image
+	// needs no .sql files and no shell.
+	if err := db.Migrate(cfg.DatabaseURL); err != nil {
+		logger.Fatal("migrations failed", zap.Error(err))
+	}
+	logger.Info("migrations applied")
+
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Fatal("database connect failed", zap.Error(err))

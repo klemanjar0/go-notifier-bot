@@ -14,6 +14,7 @@ type Store interface {
 	CreateReminder(ctx context.Context, arg db.CreateReminderParams) (db.Reminder, error)
 	ListPending(ctx context.Context, chatID int64) ([]db.Reminder, error)
 	MarkAllSentForChat(ctx context.Context, chatID int64) error
+	CancelReminder(ctx context.Context, arg db.CancelReminderParams) error
 }
 
 type Service struct {
@@ -42,6 +43,14 @@ func (s *Service) ListPending(ctx context.Context, chatID int64) ([]db.Reminder,
 		return nil, fmt.Errorf("reminder: list pending: %w", err)
 	}
 	return items, nil
+}
+
+func (s *Service) Cancel(ctx context.Context, chatID, id int64) error {
+	err := s.store.CancelReminder(ctx, db.CancelReminderParams{ID: id, ChatID: chatID})
+	if err != nil {
+		return fmt.Errorf("reminder: cancel: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) MarkAllSentForChat(ctx context.Context, chatID int64) error {

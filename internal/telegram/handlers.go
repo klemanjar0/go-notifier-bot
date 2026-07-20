@@ -4,13 +4,20 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/klemanjar0/go-notifier-bot/internal/db"
 	"github.com/klemanjar0/go-notifier-bot/internal/logger"
 	"go.uber.org/zap"
 )
+
+// cancelPrefix marks inline-button callback data for the /list cancel buttons.
+// The reminder id is appended, e.g. "cancel:42".
+const cancelPrefix = "cancel:"
 
 type ParserResult struct {
 	OK     bool   `json:"ok"`
@@ -24,6 +31,8 @@ type Parser interface {
 
 type Reminders interface {
 	Create(ctx context.Context, chatID int64, text string, fireAt time.Time) (int64, error)
+	ListPending(ctx context.Context, chatID int64) ([]db.Reminder, error)
+	Cancel(ctx context.Context, chatID, id int64) error
 	MarkAllSentForChat(ctx context.Context, chatID int64) error
 }
 
@@ -73,6 +82,127 @@ func (h *Handlers) ClearAllHandler(ctx context.Context, b *bot.Bot, update *mode
 		log.Error("send message failed", zap.Error(err))
 		return
 	}
+}
+
+func (h *Handlers) ListHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	log := logger.Named("telegram")
+	chatID := update.Message.Chat.ID
+
+	items, err := h.reminders.ListPending(ctx, chatID)
+	if err != nil {
+		log.Error("list pending failed", zap.Int64("chat_id", chatID), zap.Error(err))
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "не смог поднять список, что-то заскрипело. попробуй позже.",
+		})
+		return
+	}
+
+	if len(items) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "пусто. ни одной напоминалки на тебе не висит.",
+		})
+		return
+	}
+
+	text, markup := renderList(items)
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        text,
+		ReplyMarkup: markup,
+	}); err != nil {
+		log.Error("send message failed", zap.Error(err))
+	}
+}
+
+// CancelCallbackHandler handles the "❌" buttons rendered by /list. It marks the
+// selected reminder as sent and refreshes the list message in place.
+func (h *Handlers) CancelCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	log := logger.Named("telegram")
+	cb := update.CallbackQuery
+
+	idStr := strings.TrimPrefix(cb.Data, cancelPrefix)
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		log.Error("parse cancel id failed", zap.String("data", cb.Data), zap.Error(err))
+		b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: cb.ID})
+		return
+	}
+
+	// The originating message carries the chat we're allowed to touch; scoping the
+	// cancel by chat_id keeps one chat from cancelling another's reminders.
+	msg := cb.Message.Message
+	if msg == nil {
+		b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: cb.ID})
+		return
+	}
+	chatID := msg.Chat.ID
+
+	if err := h.reminders.Cancel(ctx, chatID, id); err != nil {
+		log.Error("cancel reminder failed", zap.Int64("id", id), zap.Int64("chat_id", chatID), zap.Error(err))
+		b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "не вышло отменить, попробуй ещё раз",
+		})
+		return
+	}
+
+	b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: cb.ID,
+		Text:            "отменил ✅",
+	})
+
+	// Re-render the list so the cancelled item drops off the message.
+	items, err := h.reminders.ListPending(ctx, chatID)
+	if err != nil {
+		log.Error("list pending failed", zap.Int64("chat_id", chatID), zap.Error(err))
+		return
+	}
+
+	if len(items) == 0 {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: msg.ID,
+			Text:      "всё, список пуст. чистота.",
+		})
+		return
+	}
+
+	text, markup := renderList(items)
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   msg.ID,
+		Text:        text,
+		ReplyMarkup: markup,
+	})
+}
+
+// renderList builds the /list message text and the per-item cancel keyboard.
+func renderList(items []db.Reminder) (string, models.InlineKeyboardMarkup) {
+	var sb strings.Builder
+	sb.WriteString("вот что я тебе обещал напомнить:\n\n")
+
+	rows := make([][]models.InlineKeyboardButton, 0, len(items))
+	for i, r := range items {
+		fmt.Fprintf(&sb, "%d. %s — %s\n", i+1, r.Text, r.FireAt.Time.Format("02.01 15:04"))
+		rows = append(rows, []models.InlineKeyboardButton{{
+			Text:         fmt.Sprintf("❌ %d. %s", i+1, truncate(r.Text, 40)),
+			CallbackData: cancelPrefix + strconv.FormatInt(r.ID, 10),
+		}})
+	}
+
+	return sb.String(), models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// truncate keeps inline-button labels within Telegram's limits, cutting on runes
+// so multi-byte text isn't split mid-character.
+func truncate(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func (h *Handlers) AnythingHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
